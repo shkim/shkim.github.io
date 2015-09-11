@@ -55,7 +55,7 @@ body {
 </head><body>
     <canvas id="roll"></canvas>
     <canvas id="keyboard"></canvas>
-    <button id="playstop" onclick="togglePlayStop()">Play/Stop</button>
+    <button id="playstop">Play/Stop</button>
     
     
   <div class="workspace">
@@ -84,6 +84,7 @@ body {
     <spiral-knob id="k-mix" label="Mix" value="0.25" min-value="0.0" max-value="1.0"></spiral-knob>
     <spiral-knob id="k-delay" label="Delay Time" value="0.125" min-value="0.005" max-value="3.0"></spiral-knob>
     <spiral-knob id="k-feedback" label="Feedback" value="0.35" min-value="0.01" max-value="0.99"></spiral-knob>
+    <spiral-knob id="k-tempo" label="Tempo" value="0.5" min-value="0.01" max-value="4"></spiral-knob>
   </div>
     
 <script>
@@ -147,6 +148,11 @@ function MyCanvas(tagId)
         ctx.fillRect(x0,y0,w,h);
     }
     
+    this.drawFilledBox = function(x0,y0,w,h) {
+        ctx.fillRect(x0,y0,w,h);
+        ctx.strokeRect(x0,y0,w,h);
+    }
+    
     this.clear = function(c) {
         ctx.fillStyle = c;
         ctx.fillRect(0,0,can.clientWidth, can.clientHeight);
@@ -161,7 +167,6 @@ function MyCanvas(tagId)
     }
     
     this.fillText = function(s,x,y) {
-        ctx.fillStyle = "black";
         ctx.fillText(s,x,y);
     }
     
@@ -186,16 +191,15 @@ function NoteRoll(kbd,allNotes)
     var canvas = new MyCanvas("roll");
     
     var idxFinalTick = allNotes.length -1;
-    var tickMax  = allNotes[idxFinalTick][0];
-    
+    var tickMax  = allNotes[idxFinalTick][0] + 3000;    
     var cyRoll = canvas.getHeight() - kbd.getHeight();
-    var yRatio = cyRoll / tickMax;
        
     // constants
     var yTickRatio = 0.5;
 
     // running states    
     var tickBase;
+    var tickLastPlayed;
     var idxBeginTick;
     
     var curPlayingEndTicks = new Array(128);
@@ -204,13 +208,7 @@ function NoteRoll(kbd,allNotes)
     
     var self = this;
     
-    canvas.setFont("30px Arial");
-    canvas.setTextAlign("center");
-    
-    this.rewind = function() {
-        tickBase = 0;
-        idxBeginTick = 0;
-        
+    this.noteOffAll = function() {
         for (var i=pitchMin; i<=pitchMax; i++)
         {
             if (curPlayingEndTicks[i] != undefined)
@@ -221,13 +219,18 @@ function NoteRoll(kbd,allNotes)
         }
     }
     
+    this.rewind = function() {
+        tickBase = 0;
+        tickLastPlayed = 0;
+        idxBeginTick = 0;
+        
+        self.noteOffAll();        
+    }
+    
     this.rewind();
     
-    this.updatePlayingTick = function(tickNow) {
-        
-        tickNow *= 0.5;
-        
-        tickBase = tickNow;
+    this.updatePlayingTick = function(deltaTick) {
+        tickBase += deltaTick;
         
         for (var i=pitchMin; i<=pitchMax; i++)
         {
@@ -254,29 +257,44 @@ function NoteRoll(kbd,allNotes)
                     var pitch = note[0];
                     if (curPlayingEndTicks[pitch] == undefined)
                     {
-                        playNote(pitch);
-                        curPlayingEndTicks[pitch] = tick + note[1];
+                        var endTick = tick + note[1];
+                        if (tickBase < endTick)
+                        {
+                            playNote(pitch);
+                            curPlayingEndTicks[pitch] = endTick;    
+                        }                        
                     }
                 }
             }
             else
-            {   
+            {
                 idxBeginTick = i;
                 return;
-            }            
+            }
+        }
+        
+        if (idxBeginTick >= idxFinalTick)
+        {
+            if (tickMax < tickBase)
+            {
+                // finished
+                isPlaying = false;
+                self.rewind();
+            }
         }
         
     }
     
+    canvas.setFont("24px Arial");
+    canvas.setTextAlign("center");
+    canvas.setLineWidth(2);
+    var cxWK = kbd.getWhiteKeyWidth();
+    var cxBK = kbd.getBlackKeyWidth();
+    
     this.redraw = function() {
         
-        canvas.clear('#888');
-        
+        canvas.clear('#888');        
         canvas.setStrokeColor('#000');
-        canvas.setLineWidth(2);
-        
-        var wasBlack = false;
-        canvas.setFillColor('#fff');
         
         for (var i=pitchMin; i<=pitchMax; i++)
         {
@@ -289,25 +307,13 @@ function NoteRoll(kbd,allNotes)
             
             if (ki.isBlack)
             {
-                if (!wasBlack)
-                {
-                    wasBlack = true;
-                    canvas.setFillColor('#f00');
-                }
-                
-                canvas.fillBox(ki.x, y0, kbd.getBlackKeyWidth(), cyRoll - y0);
-                canvas.drawBox(ki.x, y0, kbd.getBlackKeyWidth(), cyRoll - y0);                
+                canvas.setFillColor('#f00');
+                canvas.drawFilledBox(ki.x, y0, cxBK, cyRoll - y0);                
             }
             else
-            {   
-                if (wasBlack)
-                {
-                    wasBlack = false;
-                    canvas.setFillColor('#fff');
-                }
-             
-                canvas.fillBox(ki.x, y0, kbd.getWhiteKeyWidth(), cyRoll - y0);
-                canvas.drawBox(ki.x, y0, kbd.getWhiteKeyWidth(), cyRoll - y0);
+            {
+                canvas.setFillColor('#fff');
+                canvas.drawFilledBox(ki.x, y0, cxWK, cyRoll - y0);
             }
             
                             
@@ -332,37 +338,26 @@ function NoteRoll(kbd,allNotes)
                 var cy = note[1] * yTickRatio;
                 var ki = kbd.keyInfo[note[0]];
                 
+                var cx;                
                 if (ki.isBlack)
                 {
-                    if (!wasBlack)
-                    {
-                        wasBlack = true;
-                        canvas.setFillColor('#f00');
-                    }
-                    
-                    canvas.fillBox(ki.x, y0 - cy, kbd.getBlackKeyWidth(), cy);
-                    canvas.drawBox(ki.x, y0 - cy, kbd.getBlackKeyWidth(), cy);
-                    
-                    //canvas.drawText(ki.name, ki.x + kbd.getBlackKeyWidth() /2, y0 - 5);
+                    canvas.setFillColor('#f00');
+                    cx = cxBK;
                 }
                 else
-                {   
-                    if (wasBlack)
-                    {
-                        wasBlack = false;
-                        canvas.setFillColor('#fff');
-                    }
-                
-                    canvas.fillBox(ki.x, y0 - cy, kbd.getWhiteKeyWidth(), cy);
-                    canvas.drawBox(ki.x, y0 - cy, kbd.getWhiteKeyWidth(), cy);
-                      
-                    //canvas.drawText(ki.name, ki.x + kbd.getWhiteKeyWidth() /2, y0 - 5);                
+                {
+                    canvas.setFillColor('#fff');
+                    cx = cxWK;
                 }
+                
+                canvas.drawFilledBox(ki.x, y0 - cy, cx, cy);
+                
+                canvas.setFillColor('#00c');
+                canvas.fillText(ki.name, ki.x + cx/2, y0 - 5);                
             }
         }
         
         canvas.setStrokeColor('#f00');
-        canvas.setLineWidth(2);
         canvas.drawLine(0,cyRoll, canvas.getWidth(), cyRoll);
     }
 }
@@ -411,25 +406,26 @@ function MyKeyboard(pitchMin, pitchMax)
             break;
         case 9:
             x = cxWhiteKey *5;
-            break;
             name = 'A';
+            break;
         case 11:
             x = cxWhiteKey *6;
-            break;
             name = 'B';
+            break;
             
         case 1:
-            x = cxWhiteKey - cxBlackKey * 0.5;
+            x = cxWhiteKey - cxBlackKey * 0.55;
             isBlack = true;
             name = 'C#';
             break;
         case 3:
-            x = cxWhiteKey *2 - cxBlackKey * 0.5;
+            x = cxWhiteKey *2 - cxBlackKey * 0.45;
             isBlack = true;
             name = 'D#';
             break;
+            
         case 6:
-            x = cxWhiteKey *4 - cxBlackKey * 0.7;
+            x = cxWhiteKey *4 - cxBlackKey * 0.6;
             isBlack = true;
             name = 'F#';
             break;
@@ -439,7 +435,7 @@ function MyKeyboard(pitchMin, pitchMax)
             name = 'G#';
             break;
         case 10:
-            x = cxWhiteKey *5 + cxBlackKey * 0.7;
+            x = cxWhiteKey *6 - cxBlackKey * 0.4;
             isBlack = true;
             name = 'A#';
             break;
@@ -509,23 +505,22 @@ function MyKeyboard(pitchMin, pitchMax)
 var mykbd;
 var myroll;
 
-var tickStart;
+var tickPrevious;
 var isPlaying = false;
+var tempoKnob;
 
 function updateAnim(timestamp)
 {
     if (!isPlaying)
-        return;
-        
-    if (tickStart < 0)
     {
-        tickStart = timestamp;
-        myroll.rewind();
-    }    
-
-    myroll.updatePlayingTick(timestamp - tickStart);
-    myroll.redraw();
-                
+        console.log("Play finished");
+        return;
+    }
+    
+    myroll.updatePlayingTick((timestamp - tickPrevious) * tempoKnob.getValue());
+    tickPrevious = timestamp;
+    
+    myroll.redraw();                
     window.requestAnimationFrame(updateAnim);
 }
 
@@ -535,7 +530,8 @@ function togglePlayStop()
     
     if (isPlaying)
     {
-        tickStart = -1;
+        console.log("Play started");
+        tickPrevious = window.performance.now();
         window.requestAnimationFrame(updateAnim);
     }        
 }
@@ -548,6 +544,7 @@ $(function() {
         mykbd.redraw();
         myroll.redraw();
         
+        $('#playstop').click(togglePlayStop);        
     });
 });
 
@@ -774,7 +771,7 @@ window.addEventListener('WebComponentsReady', function () {
     'k-tune2', 'k-tune3', 'k-cutoff', 'k-reso',
     'k-fltA', 'k-fltD', 'k-fltS', 'k-fltR',
     'k-ampA', 'k-ampD', 'k-ampS', 'k-ampR',
-    'k-mix', 'k-delay', 'k-feedback'
+    'k-mix', 'k-delay', 'k-feedback', 'k-tempo'
   ]);
 
   var echo = new Echo(context);
@@ -784,6 +781,8 @@ window.addEventListener('WebComponentsReady', function () {
   knobs.delay.bind(echo.dly.delayTime);
   knobs.feedback.bind(echo.fbk.gain);
 
+  tempoKnob = knobs.tempo;
+  
   var voices = [];
 
   /**
@@ -831,7 +830,7 @@ window.addEventListener('WebComponentsReady', function () {
       }
   };
 
-  KeyboardHandler.startListen();
+  //KeyboardHandler.startListen();
 
 });
 
