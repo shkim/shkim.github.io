@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html>
+    <head>
+    <title>Musicking on the Web, Seoul 2015 Hackathon</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+    
+    <link rel="import" href="bower_components/polymer/polymer.html">
+    <link rel="import" href="bower_components/paper-styles/paper-styles.html">
+    <link rel="import" href="bower_components/spiral-knob/spiral-knob.html">
+
+    <script src="bower_components/webcomponentsjs/webcomponents-lite.min.js"></script>
+    <script src="bower_components/spiral/spiral.min.js"></script>
+<style>
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Roboto', 'Noto', sans-serif;
+    color: #263238;
+    -webkit-font-smoothing: antialiased;
+    -webkit-user-select: none;
+}
+#roll {
+    background-color: gray;
+    position: absolute;
+    top: 0px;
+    height: 100%;
+    width: 100%;
+}
+#keyboard {
+    background-color: white;
+    position: absolute;
+    height: 15vh;
+    width: 100%;
+    bottom: 0;
+}
+#playstop {
+    position: absolute;
+    width: 100px;
+    top: 5px;
+    left: 5px;
+}
+    
+.workspace {
+    display: block;
+    margin-top: 50px;
+}
+.param-divider {
+    display: inline-block;
+    margin: 0 10px;
+}
+    
+</style>
+</head><body>
+    <canvas id="roll"></canvas>
+    <canvas id="keyboard"></canvas>
+    <button id="playstop" onclick="togglePlayStop()">Play/Stop</button>
+    
+    
+  <div class="workspace">
+    <spiral-knob id="k-vol1" label="OSC1" value="0.4" min-value="0.0" max-value="1.0" size="small"></spiral-knob>
+    <spiral-knob id="k-vol2" label="OSC2" value="0.15" min-value="0.0" max-value="1.0" size="small"></spiral-knob>
+    <spiral-knob id="k-vol3" label="OSC3" value="0.15" min-value="0.0" max-value="1.0" size="small"></spiral-knob>
+    <div class="param-divider"></div>
+    <spiral-knob id="k-tune2" label="Tune 2" value="10" min-value="-1200" max-value="1200" size="small"></spiral-knob>
+    <spiral-knob id="k-tune3" label="Tune 3" value="-10" min-value="-1200" max-value="1200" size="small"></spiral-knob>
+    <div class="param-divider"></div>
+    <spiral-knob id="k-cutoff" label="Cutoff" value="500" min-value="125" max-value="5000" size="small"></spiral-knob>
+    <spiral-knob id="k-reso" label="Reso" value="12.0" min-value="0.1" max-value="36" size="small"></spiral-knob>
+    <br>
+    <spiral-knob id="k-fltA" label="Flt A" value="0.02" min-value="0.01" max-value="0.25" size="small"></spiral-knob>
+    <spiral-knob id="k-fltD" label="Flt D" value="0.1" min-value="0.01" max-value="1.0" size="small"></spiral-knob>
+    <spiral-knob id="k-fltS" label="Flt S" value="0.35" min-value="0.0" max-value="1.0" size="small"></spiral-knob>
+    <spiral-knob id="k-fltR" label="Flt R" value="0.35" min-value="0.01" max-value="5.0" size="small"></spiral-knob>
+    <div class="param-divider"></div>
+    <spiral-knob id="k-ampA" label="A" value="0.02" min-value="0.01" max-value="0.25" size="small"></spiral-knob>
+    <spiral-knob id="k-ampD" label="D" value="0.1" min-value="0.01" max-value="1.0" size="small"></spiral-knob>
+    <spiral-knob id="k-ampS" label="S" value="0.35" min-value="0.0" max-value="1.0" size="small"></spiral-knob>
+    <spiral-knob id="k-ampR" label="R" value="0.35" min-value="0.01" max-value="5.0" size="small"></spiral-knob>
+  </div>
+
+  <div class="workspace">
+    <spiral-knob id="k-mix" label="Mix" value="0.25" min-value="0.0" max-value="1.0"></spiral-knob>
+    <spiral-knob id="k-delay" label="Delay Time" value="0.125" min-value="0.005" max-value="3.0"></spiral-knob>
+    <spiral-knob id="k-feedback" label="Feedback" value="0.35" min-value="0.01" max-value="0.99"></spiral-knob>
+  </div>
+    
+<script>
+
+var getPixelRatio = function(context)
+{
+    var backingStore = context.backingStorePixelRatio ||
+        context.webkitBackingStorePixelRatio ||
+        context.mozBackingStorePixelRatio ||
+        context.msBackingStorePixelRatio ||
+        context.oBackingStorePixelRatio ||
+        context.backingStorePixelRatio || 1;
+
+    return (window.devicePixelRatio || 1) / backingStore;
+};
+
+function MyCanvas(tagId)
+{
+    var can = document.getElementById(tagId);
+    var ctx = can.getContext("2d");
+
+    var scaler = getPixelRatio(ctx);
+    can.width = can.clientWidth * scaler;
+    can.height = can.clientHeight * scaler;
+    ctx.scale(scaler, scaler);
+    
+    var self = this;
+    
+    this.getWidth = function() {
+        return can.clientWidth;
+    }
+    
+    this.getHeight = function() {
+        return can.clientHeight;
+    }
+    
+    this.setStrokeColor = function(c) {
+        ctx.strokeStyle=c;
+    }
+    
+    this.setLineWidth = function(w) {
+        ctx.lineWidth=w;
+    }
+    
+    this.drawLine = function(x0,y0,x1,y1) {
+        ctx.beginPath();
+        ctx.moveTo(x0,y0);
+        ctx.lineTo(x1,y1);
+        ctx.stroke();        
+    }
+    
+    this.drawBox = function(x0,y0,w,h) {
+        ctx.strokeRect(x0,y0,w,h);
+    }
+    
+    this.setFillColor = function(c) {
+        ctx.fillStyle = c;
+    }
+
+    this.fillBox = function(x0,y0,w,h) {
+        ctx.fillRect(x0,y0,w,h);
+    }
+    
+    this.clear = function(c) {
+        ctx.fillStyle = c;
+        ctx.fillRect(0,0,can.clientWidth, can.clientHeight);
+    } 
+    
+    this.setFont = function(f) {
+        ctx.font = f;
+    }
+    
+    this.setTextAlign = function(a) {
+        ctx.textAlign = a;
+    }
+    
+    this.fillText = function(s,x,y) {
+        ctx.fillStyle = "black";
+        ctx.fillText(s,x,y);
+    }
+    
+    this.drawText = function(s,x,y) {
+        ctx.strokeText(s,x,y);
+    }
+}
+
+function playNote(pitch)
+{
+    //console.log("TODO: noteOn %d", pitch);
+    KeyboardHandler.notify('noteon', pitch);
+}
+function stopNote(pitch)
+{
+    //console.log("TODO: noteOff %d", pitch);
+    KeyboardHandler.notify('noteoff', pitch);
+}
+
+function NoteRoll(kbd,allNotes)
+{
+    var canvas = new MyCanvas("roll");
+    
+    var idxFinalTick = allNotes.length -1;
+    var tickMax  = allNotes[idxFinalTick][0];
+    
+    var cyRoll = canvas.getHeight() - kbd.getHeight();
+    var yRatio = cyRoll / tickMax;
+       
+    // constants
+    var yTickRatio = 0.5;
+
+    // running states    
+    var tickBase;
+    var idxBeginTick;
+    
+    var curPlayingEndTicks = new Array(128);
+    var pitchMin = kbd.getPitchMin();
+    var pitchMax = kbd.getPitchMax();
+    
+    var self = this;
+    
+    canvas.setFont("30px Arial");
+    canvas.setTextAlign("center");
+    
+    this.rewind = function() {
+        tickBase = 0;
+        idxBeginTick = 0;
+        
+        for (var i=pitchMin; i<=pitchMax; i++)
+        {
+            if (curPlayingEndTicks[i] != undefined)
+            {
+                stopNote(i);
+                curPlayingEndTicks[i] = undefined;
+            }
+        }
+    }
+    
+    this.rewind();
+    
+    this.updatePlayingTick = function(tickNow) {
+        
+        tickNow *= 0.5;
+        
+        tickBase = tickNow;
+        
+        for (var i=pitchMin; i<=pitchMax; i++)
+        {
+            var endTick = curPlayingEndTicks[i]; 
+            if (endTick == undefined)
+                continue;
+                
+            if (endTick <= tickBase)
+            {
+                stopNote(i);
+                curPlayingEndTicks[i] = undefined;
+            }
+        }
+        
+        for (var i=idxBeginTick; i<=idxFinalTick; i++)
+        {
+            var tick = allNotes[i][0];
+            if (tick < tickBase)
+            {
+                var notes = allNotes[i][1];            
+                for (var n=0; n<notes.length; n++)
+                {
+                    var note = notes[n];
+                    var pitch = note[0];
+                    if (curPlayingEndTicks[pitch] == undefined)
+                    {
+                        playNote(pitch);
+                        curPlayingEndTicks[pitch] = tick + note[1];
+                    }
+                }
+            }
+            else
+            {   
+                idxBeginTick = i;
+                return;
+            }            
+        }
+        
+    }
+    
+    this.redraw = function() {
+        
+        canvas.clear('#888');
+        
+        canvas.setStrokeColor('#000');
+        canvas.setLineWidth(2);
+        
+        var wasBlack = false;
+        canvas.setFillColor('#fff');
+        
+        for (var i=pitchMin; i<=pitchMax; i++)
+        {
+            var endTick = curPlayingEndTicks[i]; 
+            if (endTick == undefined)
+                continue;
+
+            var y0 = cyRoll - (endTick - tickBase) * yTickRatio;
+            var ki = kbd.keyInfo[i];
+            
+            if (ki.isBlack)
+            {
+                if (!wasBlack)
+                {
+                    wasBlack = true;
+                    canvas.setFillColor('#f00');
+                }
+                
+                canvas.fillBox(ki.x, y0, kbd.getBlackKeyWidth(), cyRoll - y0);
+                canvas.drawBox(ki.x, y0, kbd.getBlackKeyWidth(), cyRoll - y0);                
+            }
+            else
+            {   
+                if (wasBlack)
+                {
+                    wasBlack = false;
+                    canvas.setFillColor('#fff');
+                }
+             
+                canvas.fillBox(ki.x, y0, kbd.getWhiteKeyWidth(), cyRoll - y0);
+                canvas.drawBox(ki.x, y0, kbd.getWhiteKeyWidth(), cyRoll - y0);
+            }
+            
+                            
+            if (endTick <= tickBase)
+            {
+                stopNote(i);
+                curPlayingEndTicks[i] = undefined;
+            }
+        }
+        
+        for (var i=idxBeginTick; i<=idxFinalTick; i++)
+        {
+            var tick = allNotes[i][0];
+            var y0 = cyRoll - (tick - tickBase) * yTickRatio;
+            if (y0 < 0)
+                break;
+
+            var notes = allNotes[i][1];            
+            for (var n=0; n<notes.length; n++)
+            {
+                var note = notes[n];
+                var cy = note[1] * yTickRatio;
+                var ki = kbd.keyInfo[note[0]];
+                
+                if (ki.isBlack)
+                {
+                    if (!wasBlack)
+                    {
+                        wasBlack = true;
+                        canvas.setFillColor('#f00');
+                    }
+                    
+                    canvas.fillBox(ki.x, y0 - cy, kbd.getBlackKeyWidth(), cy);
+                    canvas.drawBox(ki.x, y0 - cy, kbd.getBlackKeyWidth(), cy);
+                    
+                    //canvas.drawText(ki.name, ki.x + kbd.getBlackKeyWidth() /2, y0 - 5);
+                }
+                else
+                {   
+                    if (wasBlack)
+                    {
+                        wasBlack = false;
+                        canvas.setFillColor('#fff');
+                    }
+                
+                    canvas.fillBox(ki.x, y0 - cy, kbd.getWhiteKeyWidth(), cy);
+                    canvas.drawBox(ki.x, y0 - cy, kbd.getWhiteKeyWidth(), cy);
+                      
+                    //canvas.drawText(ki.name, ki.x + kbd.getWhiteKeyWidth() /2, y0 - 5);                
+                }
+            }
+        }
+        
+        canvas.setStrokeColor('#f00');
+        canvas.setLineWidth(2);
+        canvas.drawLine(0,cyRoll, canvas.getWidth(), cyRoll);
+    }
+}
+
+function MyKeyboard(pitchMin, pitchMax)
+{
+    var minOctave = Math.floor((pitchMin - 24) / 12) +1;
+    var maxOctave = Math.ceil((pitchMax - 24) / 12) +1;
+    
+    var canvas = new MyCanvas("keyboard");
+    var numWhiteKeys = (maxOctave - minOctave) * 7;
+    var cxWhiteKey = canvas.getWidth() / numWhiteKeys;
+    var cxBlackKey = cxWhiteKey * 0.8;
+    var cyWhiteKey = canvas.getHeight();
+    
+    var minPitch = (minOctave - 1) * 12 + 24;
+    var maxPitch = maxOctave * 12 + 24;
+    
+    this.keyInfo = new Array(128);
+    for (var pitch=0; pitch<12; pitch++)
+    {
+        var isBlack = false;
+        
+        var x, name;
+        switch (pitch)
+        {
+        case 0:
+            x = 0;
+            name = 'C';
+            break;                
+        case 2:
+            x = cxWhiteKey;
+            name = 'D';
+            break;
+        case 4:
+            x = cxWhiteKey *2;
+            name = 'E';
+            break;
+        case 5:
+            x = cxWhiteKey *3;
+            name = 'F';
+            break;
+        case 7:
+            x = cxWhiteKey *4;
+            name = 'G';
+            break;
+        case 9:
+            x = cxWhiteKey *5;
+            break;
+            name = 'A';
+        case 11:
+            x = cxWhiteKey *6;
+            break;
+            name = 'B';
+            
+        case 1:
+            x = cxWhiteKey - cxBlackKey * 0.5;
+            isBlack = true;
+            name = 'C#';
+            break;
+        case 3:
+            x = cxWhiteKey *2 - cxBlackKey * 0.5;
+            isBlack = true;
+            name = 'D#';
+            break;
+        case 6:
+            x = cxWhiteKey *4 - cxBlackKey * 0.7;
+            isBlack = true;
+            name = 'F#';
+            break;
+        case 8:
+            x = cxWhiteKey *5 - cxBlackKey * 0.5;
+            isBlack = true;
+            name = 'G#';
+            break;
+        case 10:
+            x = cxWhiteKey *5 + cxBlackKey * 0.7;
+            isBlack = true;
+            name = 'A#';
+            break;
+        }
+        
+        this.keyInfo[pitch] = {
+            'x': x,
+            'isBlack': isBlack,
+            'octave': 0,
+            'name': name
+        };
+    }
+    
+    
+    for (var i=12; i<128; i++)
+    {
+        var pitch = i % 12;        
+        var octave = Math.floor(i / 12) -1;
+        var xBase = (octave -2) * cxWhiteKey * 7;
+         
+        this.keyInfo[i] = {
+            'x': (xBase + this.keyInfo[pitch].x),
+            'isBlack': this.keyInfo[pitch].isBlack,
+            'octave': octave,
+            'name': this.keyInfo[pitch].name,            
+        };
+    }
+    
+    var self = this;
+    
+    this.getHeight = function() {
+        return canvas.getHeight()
+    }
+    
+    this.getWhiteKeyWidth = function() {
+        return cxWhiteKey;
+    }
+    
+    this.getBlackKeyWidth = function() {
+        return cxBlackKey;
+    }
+    
+    this.getPitchMin = function() {
+        return minPitch;
+    }
+    
+    this.getPitchMax = function() {
+        return maxPitch;
+    }
+    
+    this.redraw = function() {
+        for (var i=minPitch; i<maxPitch; i++)
+        {
+            var x = self.keyInfo[i].x;
+            if (self.keyInfo[i].isBlack)
+            {
+                canvas.fillBox(x,0,cxBlackKey,cyWhiteKey /2);
+            }
+            else
+            {
+                canvas.drawBox(x,0,cxWhiteKey,cyWhiteKey);
+            }
+        }
+    }
+}
+
+var mykbd;
+var myroll;
+
+var tickStart;
+var isPlaying = false;
+
+function updateAnim(timestamp)
+{
+    if (!isPlaying)
+        return;
+        
+    if (tickStart < 0)
+    {
+        tickStart = timestamp;
+        myroll.rewind();
+    }    
+
+    myroll.updatePlayingTick(timestamp - tickStart);
+    myroll.redraw();
+                
+    window.requestAnimationFrame(updateAnim);
+}
+
+function togglePlayStop()
+{
+    isPlaying = !isPlaying;
+    
+    if (isPlaying)
+    {
+        tickStart = -1;
+        window.requestAnimationFrame(updateAnim);
+    }        
+}
+
+$(function() {
+    $.getJSON("tune1.json", function(json) {
+        mykbd = new MyKeyboard(json.pitchMin, json.pitchMax);
+        myroll = new NoteRoll(mykbd, json.notes);
+        
+        mykbd.redraw();
+        myroll.redraw();
+        
+    });
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* COPIED FROM MOTW polyphony.html TUTORIAL CODE */
+
+function MultiVoice(context) {
+  this._context = context;
+
+  /**
+   * 1.1 Build an audiograph with 3 oscillators, 3 gains for each oscillator,
+   *   one lowpass filter and the output amplifier.
+   */
+  this._context.createNodes(this, {
+    osc1: 'Oscillator',
+    osc2: 'Oscillator',
+    osc3: 'Oscillator',
+    vol1: 'Gain',
+    vol2: 'Gain',
+    vol3: 'Gain',
+    lpf: 'BiquadFilter',
+    amp: 'Gain'
+  });
+
+  this.osc1.to(this.vol1).to(this.lpf).to(this.amp);
+  this.osc2.to(this.vol2).to(this.lpf);
+  this.osc3.to(this.vol3).to(this.lpf);
+
+  this.osc1.type = this.osc2.type = this.osc3.type = 'sawtooth';
+}
+
+MultiVoice.prototype.to = function (destination) {
+  return this.amp.to(destination);
+};
+
+MultiVoice.prototype.setParams = function (params) {
+  this.vol1.gain.value = params.vol1;
+  this.vol2.gain.value = params.vol2;
+  this.vol3.gain.value = params.vol3;
+  this.osc2.detune.value = params.tune2;
+  this.osc3.detune.value = params.tune3;
+  this.lpf.Q.value = params.reso;
+};
+
+/**
+ * 1.2 Implement noteOn() method.
+ *   - Besides the pitch and the intensity, use |params| property bag to pass
+ *     the relevant parameters.
+ *   - Exercise the envelope over the filter frequency and the amplifier gain.
+ */
+MultiVoice.prototype.noteOn = function (pitch, intensity, params) {
+  var freq = Spiral.mtof(pitch);
+  var now = this._context.now;
+
+  this.osc1.frequency.value = freq;
+  this.osc2.frequency.value = freq;
+  this.osc3.frequency.value = freq;
+
+  this.lpf.frequency
+    .step(params.cutoff, now)
+    .expo(params.cutoff * (1.0 + intensity), now + params.fltA)
+    .expo(params.cutoff * (1.0 + params.fltS), now + params.fltA + params.fltD);
+
+  this.amp.gain
+    .step(0.0, now)
+    .line(intensity, now + params.ampA)
+    .line(params.ampS * intensity, now + params.ampA + params.ampD);
+
+    this._envCap = now + params.ampA + params.ampD;
+
+  this.osc1.start(now);
+  this.osc2.start(now);
+  this.osc3.start(now);
+};
+
+/**
+ * 1.3 Implement noteOff() method.
+ *   - Use the property bag as shown above.
+ *   - Start the release phase on the filter and the amplifier.
+ */
+MultiVoice.prototype.noteOff = function (params) {
+  var releaseStart = this._context.now;
+
+  if (releaseStart < this._envCap)
+    releaseStart = this._envCap;
+  
+  // TODO: slew complains about negative time constant. fix Spiral.
+  // console.log(params.cutoff, releaseStart, params.ampR);
+  // this.lpf.frequency.slew(params.cutoff, releaseStart, params.ampR);
+  
+  this.amp.gain.slew(0.0, releaseStart, params.ampR);
+
+  this.osc1.stop(releaseStart + params.ampR);
+  this.osc2.stop(releaseStart + params.ampR);
+  this.osc3.stop(releaseStart + params.ampR);
+};
+
+
+/**
+ * TASK 2: Desgin |Echo| class encasulates the feedback delay.
+ */
+function Echo(context) {
+  this._context = context;
+
+  this._context.createNodes(this, {
+    'input': 'Gain',
+    'wet': 'Gain',
+    'dry': 'Gain',
+    'dly': 'Delay',
+    'fbk': 'Gain',
+    'output': 'Gain'
+  });
+
+  this.input.to(this.wet, this.dry);
+  this.wet.to(this.dly).to(this.fbk).to(this.dly).to(this.output);
+  this.dry.to(this.output);
+}
+
+Echo.prototype.to = function (destination) {
+  return this.output.to(destination);
+};
+
+
+// Use KeyboardHandler from the |modulation| tutorial.
+var KeyboardHandler = {
+
+  _keymap: {
+    '65': 60,   // C4
+    '87': 61,   // C#4
+    '83': 62,   // D4
+    '69': 63,   // D#4
+    '68': 64,   // E4
+    '70': 65,   // F4
+    '84': 66,   // F#4
+    '71': 67,   // G4
+    '89': 68,   // G#4
+    '72': 69,   // A4
+    '85': 70,   // A#4
+    '74': 71,   // B4
+    '75': 72    // C5
+  },
+
+  _states: [],
+
+  _handleKeyDown: function (event) {
+    var keyCode = event.keyCode;
+    if (!this._keymap[keyCode] || this._states[keyCode])
+      return;
+
+    this._states[keyCode] = true;
+
+    if (this.notify)
+      this.notify('noteon', this._keymap[keyCode]);
+  },
+
+  _handleKeyUp: function (event) {
+    var keyCode = event.keyCode;
+    if (!this._keymap[keyCode] || !this._states[keyCode])
+      return;
+
+    this._states[keyCode] = false;
+
+    if (this.notify)
+      this.notify('noteoff', this._keymap[keyCode]);
+  },
+
+  startListen: function () {
+    window.addEventListener('keydown', this._handleKeyDown.bind(this));
+    window.addEventListener('keyup', this._handleKeyUp.bind(this));
+  },
+
+  notify: null
+
+};
+
+
+/**
+ * Bonus: Implement createKnobs().
+ *   - With the array of ID strings as an argument, create an object of 
+ *     { 'name': elementID } pairs and return it.
+ */
+function createKnobs(domIds) {
+  var elements = {};
+  for (var i = 0; i < domIds.length; i++) {
+    var knobName = domIds[i].split('-')[1];
+    elements[knobName] = document.getElementById(domIds[i]);
+  }
+  return elements;
+}
+
+
+// Entry point.
+window.addEventListener('WebComponentsReady', function () {
+
+  var context = new AudioContext();
+
+  var knobs = createKnobs([
+    'k-vol1', 'k-vol2', 'k-vol3',
+    'k-tune2', 'k-tune3', 'k-cutoff', 'k-reso',
+    'k-fltA', 'k-fltD', 'k-fltS', 'k-fltR',
+    'k-ampA', 'k-ampD', 'k-ampS', 'k-ampR',
+    'k-mix', 'k-delay', 'k-feedback'
+  ]);
+
+  var echo = new Echo(context);
+  echo.to(context.DAC);
+
+  knobs.mix.bind(echo.wet.gain);
+  knobs.delay.bind(echo.dly.delayTime);
+  knobs.feedback.bind(echo.fbk.gain);
+
+  var voices = [];
+
+  /**
+   * TASK 3: Implement notify() event handler.
+   *   - Based on the |type|, perform 'noteon' or 'noteoff' accordingly.
+   *   - Handle the polyphonic behavior.
+   */
+  KeyboardHandler.notify = function (type, pitch) {
+    switch (type) {
+      case 'noteon':
+        var voice = new MultiVoice(context);
+        voice.to(echo.input);
+        
+        voice.setParams({
+          vol1: knobs.vol1.getValue(),
+          vol2: knobs.vol2.getValue(),
+          vol3: knobs.vol3.getValue(),
+          tune2: knobs.tune2.getValue(),
+          tune3: knobs.tune3.getValue(),
+          reso: knobs.reso.getValue()
+        });
+
+        voice.noteOn(pitch, 0.707, {
+          cutoff: knobs.cutoff.getValue(),
+          fltA: knobs.fltA.getValue(),
+          fltD: knobs.fltD.getValue(),
+          fltS: knobs.fltS.getValue(),
+          ampA: knobs.ampA.getValue(),
+          ampD: knobs.ampD.getValue(),
+          ampS: knobs.ampS.getValue()
+        });
+          
+        voices[pitch] = voice;
+        break;
+
+      case 'noteoff':
+        voices[pitch].noteOff({
+          cutoff: knobs.cutoff.getValue(),
+          fltR: knobs.fltR.getValue(),
+          ampR: knobs.ampR.getValue()
+        });
+
+        voices[pitch] = null;
+        break;
+      }
+  };
+
+  KeyboardHandler.startListen();
+
+});
+
+</script>
+</body></html>
+    
