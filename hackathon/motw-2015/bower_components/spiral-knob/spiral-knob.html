@@ -222,7 +222,8 @@ Example:
 
       this.$.knob.setAttribute('d', d);
       this.$.knob.setAttribute('stroke-width', baseSize * 0.12);
-      this._arcPath = this.$.knob.pathSegList.getItem(1);
+      //this._arcPath = this.$.knob.pathSegList.getItem(1);
+      this._arcPath = this.$.knob.getPathData()[1];
     },
 
     // Track the current target audioParam and update computed value.
@@ -253,10 +254,13 @@ Example:
     },
 
     _updateView: function () {
-      var target = this._normValue * Math.PI * 1.5 ;
-      this._arcPath.x = this._arcCenter + this._arcRadius * Math.cos(this._offsetRadian + target);
-      this._arcPath.y = this._arcCenter + this._arcRadius * Math.sin(this._offsetRadian + target);
-      this._arcPath.largeArcFlag = (target < Math.PI) ? false : true;
+      var target = this._normValue * Math.PI * 1.5 ;      
+      //this._arcPath.x = this._arcCenter + this._arcRadius * Math.cos(this._offsetRadian + target);
+      //this._arcPath.y = this._arcCenter + this._arcRadius * Math.sin(this._offsetRadian + target);
+      //this._arcPath.largeArcFlag = (target < Math.PI) ? false : true;
+      this._arcPath.values[5] = this._arcCenter + this._arcRadius * Math.cos(this._offsetRadian + target);
+      this._arcPath.values[6] = this._arcCenter + this._arcRadius * Math.sin(this._offsetRadian + target);
+      this._arcPath.values[3] = (target < Math.PI) ? 0 : 1;
 
       this._valueString = this.value.toFixed(2);
 
